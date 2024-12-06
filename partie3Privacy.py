@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -17,6 +15,11 @@ from sklearn.impute import SimpleImputer
 from sklearn.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
 from xgboost import XGBClassifier
 import shap
+from aif360.metrics import BinaryLabelDatasetMetric, ClassificationMetric
+from aif360.datasets import AdultDataset, BinaryLabelDataset
+from aif360.algorithms.preprocessing import Reweighing
+import numpy as np
+import pandas as pd
 import math
 import random
 
@@ -27,13 +30,16 @@ from omnixai.preprocessing.tabular import TabularTransform
 from omnixai.explainers.tabular import TabularExplainer
 """
 
+
+
 # Load the Adult dataset
+# /!\ il faut la dataset avec l'age binarisé
 adult = pd.read_csv('adult.csv')
+
 print("Adult dataset loaded successfully")
 """
 Il nous faut d'abord l'age binarisé
 """
-
 
 def get_epsilon(p=0.75, q=0.75):
     return math.log( max(q/(1-p), p/(1-q)) )
@@ -49,12 +55,12 @@ def rand_resp(x, p=0.75, q=0.75):
 
 # Step 1: Compute the cross-tabulation of the original data
 # Binarize the 'Sex' column
-adult['Sex'] = adult['Sex'].map({'Male': 1, 'Female': 0})
-n_people = len(adult['Sex'])
+adult['sex'] = adult['sex'].map({'Male': 1, 'Female': 0})
+n_people = len(adult['sex'])
 
 
 # Compute the cross-tabulation with the binarized 'Sex' column
-original_crosstab = pd.crosstab(adult['Age'], adult['Sex'])
+original_crosstab = pd.crosstab(adult['age'], adult['sex'])
 
 # print(original_crosstab)
 print("Original cross-tabulation with binarized 'Sex' computed successfully")
@@ -65,9 +71,11 @@ def laplace_mech(value, sensitivity, epsilon):
 
 epsilon = get_epsilon()
 
-adult['Age_private'] = adult['Age'].apply(lambda x: laplace_mech(x, 1, epsilon))
-adult['Sex_private'] = adult['Sex'].apply(lambda x: rand_resp(x))
+adult['Age_private'] = adult['age'].apply(lambda x: rand_resp(x))
+adult['Sex_private'] = adult['sex'].apply(lambda x: rand_resp(x))
 n_rep_sex = np.sum(adult['Sex_private'])
+n_rep_age = np.sum(adult['Age_private'])
+
 
 print("Local differential privacy applied successfully \n")
 
@@ -82,11 +90,12 @@ print("Private cross-tabulation computed successfully\n")
 
 # Step 4: Estimate the number of people in each value combination of the two sensitive attributes
 n_est_sex = 2*n_rep_sex - 0.5*n_people
+n_est_age = 2*n_rep_age - 0.5*n_people
 
-"""
-print("n_est : ", n_est_sex)
-print(np.sum(private_crosstab, axis=0) , np.sum(original_crosstab, axis=0))
-"""
+
+#print("n_est : ", n_est_sex, n_est_age)
+#print(np.sum(private_crosstab, axis=0) , np.sum(original_crosstab, axis=0))
+
 
 print("Private cross-tabulation estimated successfully\n")
 
@@ -113,7 +122,7 @@ adult.drop(columns=['Age_private', 'Sex_private'], inplace=True)
 private_adult = adult
 private_adult['Age'] = private_data['Age_private']
 private_adult['Sex'] = private_data['Sex_private']
-private_adult.rename(columns={'Age': 'Age_private', 'Sex': 'Sex_private'}, inplace=True)
+private_adult.rename(columns={'Age': 'Binarized_Age_private', 'Sex': 'Sex_private'}, inplace=True)
 
 # Step 6: Split the private data
 
@@ -135,10 +144,14 @@ X_train, X_val, y_train, y_val = train_test_split(
 # print(f"Taille de l'ensemble de validation : {len(X_val)}")
 # print(f"Taille de l'ensemble de test : {len(X_test)}")
 
+
+"""
 model = xgboost.XGBClassifier(n_estimators=300, max_depth=5)
 model.fit(X_train, y_train)
 
-"""
+
+
+
 predict_function=lambda z: model.predict_proba(transformer.transform(z))
 
 
@@ -150,5 +163,4 @@ display(tabular_data.target_column)
 display(train_labels[:2])
 """
 
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
